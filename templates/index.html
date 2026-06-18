@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agentic Market Intelligence Dashboard</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Custom Style Sheet -->
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <span class="logo-icon">▲</span>
+                <h2>Agentic AI</h2>
+            </div>
+            <nav class="sidebar-menu">
+                <a href="#" class="menu-item active" data-tab="dashboard-tab">
+                    <span class="menu-icon">📊</span> Dashboard
+                </a>
+                <a href="#" class="menu-item" data-tab="active-run-tab">
+                    <span class="menu-icon">🚀</span> Active Run
+                </a>
+                <a href="#" class="menu-item" data-tab="history-tab">
+                    <span class="menu-icon">📁</span> Run History
+                </a>
+                <a href="#" class="menu-item" data-tab="settings-tab">
+                    <span class="menu-icon">⚙️</span> Settings
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <p>Week 3 Project</p>
+                <span>v1.0.0</span>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="content-header">
+                <h1 id="page-title">Market Intelligence Dashboard</h1>
+                <div class="status-indicator">
+                    <span class="pulse-dot"></span>
+                    <span id="active-status-text">System Ready</span>
+                </div>
+            </header>
+
+            <!-- Content Tabs -->
+            <div class="tab-viewport">
+                
+                <!-- 1. Dashboard Tab -->
+                <section id="dashboard-tab" class="tab-pane active">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <span class="stat-icon">🔄</span>
+                            <div class="stat-info">
+                                <h3>Total Runs</h3>
+                                <p id="stat-total">0</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-icon">✅</span>
+                            <div class="stat-info">
+                                <h3>Success Rate</h3>
+                                <p id="stat-rate">0%</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-icon">⏱️</span>
+                            <div class="stat-info">
+                                <h3>Avg Duration</h3>
+                                <p id="stat-duration">0s</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-icon">⏳</span>
+                            <div class="stat-info">
+                                <h3>Active Runs</h3>
+                                <p id="stat-active">0</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="charts-container">
+                        <div class="chart-panel">
+                            <h3>Discovered Competitors Frequency</h3>
+                            <div class="chart-wrapper">
+                                <canvas id="competitorsChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 2. Active Run Tab -->
+                <section id="active-run-tab" class="tab-pane">
+                    <div class="run-creation-pane">
+                        <div class="input-group">
+                            <label for="company-input">Target Company or Product Name</label>
+                            <div class="input-wrapper">
+                                <input type="text" id="company-input" placeholder="e.g. Vercel, Linear, Stripe">
+                                <button id="start-run-btn" class="btn btn-primary">Start Research</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="active-run-details" class="active-run-layout" style="display: none;">
+                        <div class="run-header-summary">
+                            <h2>Researching: <span id="current-company-name">-</span></h2>
+                            <span class="badge" id="current-run-status">running</span>
+                        </div>
+
+                        <!-- Split Log Console and HITL Pane -->
+                        <div class="console-grid">
+                            <div class="console-panel">
+                                <h3>Execution Log Console</h3>
+                                <pre id="log-console" class="log-pre">Starting agent...</pre>
+                            </div>
+                            
+                            <!-- Human in the loop Panel (Shows when paused) -->
+                            <div id="hitl-panel" class="hitl-panel" style="display: none;">
+                                <div class="hitl-header">
+                                    <h3>⚠️ Human Review Required</h3>
+                                    <p>The agent compiled the competitor analysis draft. Please approve it or submit revision feedback.</p>
+                                </div>
+                                
+                                <div class="draft-preview">
+                                    <!-- View Tabs for Cards vs Markdown -->
+                                    <div class="draft-tabs-header">
+                                        <button class="draft-tab-btn active" data-draft-view="cards">Structured Cards</button>
+                                        <button class="draft-tab-btn" data-draft-view="markdown">Full Markdown Draft</button>
+                                    </div>
+                                    
+                                    <!-- Structured Cards View -->
+                                    <div id="draft-cards-view" class="draft-view-pane active">
+                                        <div class="pipeline-title">PIPELINE OUTPUT</div>
+                                        <div class="pipeline-output">
+                                            <h3>Streamlit Result Cards — one expander per competitor</h3>
+                                            <p class="pipeline-subtitle">For each report in state["final_reports"], the UI renders a card with the four extracted fields.</p>
+                                            <div id="draft-competitor-cards" class="competitor-card-grid"></div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Markdown Plain Text View -->
+                                    <div id="draft-markdown-view" class="draft-view-pane">
+                                        <div id="draft-markdown-preview" class="markdown-preview-box"></div>
+                                    </div>
+                                </div>
+                                
+                                <div class="hitl-actions">
+                                    <div class="feedback-group">
+                                        <textarea id="hitl-feedback-input" placeholder="Provide revision notes here if requesting edits (e.g. 'Add more pricing info for Netlify')"></textarea>
+                                    </div>
+                                    <div class="btn-group">
+                                        <button id="hitl-revise-btn" class="btn btn-warning">Request Edits</button>
+                                        <button id="hitl-approve-btn" class="btn btn-success">Approve & Publish</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 3. History Tab -->
+                <section id="history-tab" class="tab-pane">
+                    <div class="history-actions-bar" style="display: flex; justify-content: flex-end; margin-bottom: 15px;">
+                        <button id="clear-history-btn" class="btn btn-danger">Clear History</button>
+                    </div>
+                    <div class="table-card">
+                        <table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th>Run ID</th>
+                                    <th>Target Company</th>
+                                    <th>Discovered Competitors</th>
+                                    <th>Status</th>
+                                    <th>Date Created</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-table-body">
+                                <tr>
+                                    <td colspan="6" class="text-center">No runs logged yet.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Modal for viewing historical reports -->
+                    <div id="report-modal" class="modal" style="display: none;">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h2 id="modal-report-title">Competitor Analysis Report</h2>
+                                <span class="close-btn" id="close-modal-btn">&times;</span>
+                            </div>
+                            <div class="modal-body">
+                                <div id="modal-report-body" class="report-markdown-body"></div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 4. Settings Tab -->
+                <section id="settings-tab" class="tab-pane">
+                    <div class="settings-card">
+                        <h2>API Configuration Settings</h2>
+                        <p class="settings-helper-text">These settings will be synced with your workspace `.env` file and database config.</p>
+                        
+                        <form id="settings-form" class="settings-form">
+                            <div class="form-group">
+                                <label for="setting-nebius-key">Nebius AI Studio API Key</label>
+                                <input type="password" id="setting-nebius-key" placeholder="v1.CmMKHH...">
+                            </div>
+                            <div class="form-group">
+                                <label for="setting-nebius-url">Nebius Base URL</label>
+                                <input type="text" id="setting-nebius-url">
+                            </div>
+                            <div class="form-group">
+                                <label for="setting-nebius-model">Nebius Model ID</label>
+                                <input type="text" id="setting-nebius-model">
+                            </div>
+                            <div class="form-group">
+                                <label for="setting-tavily-key">Tavily Search API Key (Optional)</label>
+                                <input type="password" id="setting-tavily-key" placeholder="tvly-...">
+                            </div>
+                            <button type="submit" class="btn btn-primary">Save Settings</button>
+                        </form>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Custom script sheet -->
+    <script src="/static/script.js"></script>
+</body>
+</html>
