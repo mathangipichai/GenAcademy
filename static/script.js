@@ -5,6 +5,87 @@ let activeTab = "dashboard-tab";
 let activeRunId = null;
 let pollInterval = null;
 let competitorsChart = null;
+let pausedStartTime = null;
+
+// Helper to handle fetch responses and return JSON or throw detailed error messages
+function checkResponse(res) {
+    if (!res.ok) {
+        return res.json().then(data => {
+            throw new Error(data.error || `HTTP error! Status: ${res.status}`);
+        }).catch(err => {
+            if (err instanceof SyntaxError) {
+                throw new Error(`HTTP error! Status: ${res.status}`);
+            }
+            throw err;
+        });
+    }
+    return res.json();
+}
+
+// Custom Toast notification system
+function showToast(message, type = "success") {
+    let container = document.querySelector(".toast-container");
+    if (!container) {
+        container = document.createElement("div");
+        container.className = "toast-container";
+        document.body.appendChild(container);
+    }
+    
+    const toast = document.createElement("div");
+    toast.className = `toast toast-${type}`;
+    
+    let icon = "ℹ️";
+    if (type === "success") icon = "✅";
+    else if (type === "error") icon = "❌";
+    else if (type === "warning") icon = "⚠️";
+    
+    toast.innerHTML = `
+        <span class="toast-icon">${icon}</span>
+        <span class="toast-message">${message}</span>
+    `;
+    
+    container.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.classList.add("show");
+    }, 10);
+    
+    setTimeout(() => {
+        toast.classList.remove("show");
+        setTimeout(() => {
+            toast.remove();
+        }, 350);
+    }, 4000);
+}
+
+// Custom async confirmation dialog modal helper
+function showConfirmDialog(title, message) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById("confirm-modal");
+        const titleEl = document.getElementById("confirm-modal-title");
+        const msgEl = document.getElementById("confirm-modal-message");
+        const okBtn = document.getElementById("confirm-ok-btn");
+        const cancelBtn = document.getElementById("confirm-cancel-btn");
+        const closeBtn = document.getElementById("close-confirm-btn");
+        
+        titleEl.textContent = title;
+        msgEl.textContent = message;
+        
+        modal.style.display = "flex";
+        
+        const cleanup = (value) => {
+            modal.style.display = "none";
+            okBtn.onclick = null;
+            cancelBtn.onclick = null;
+            closeBtn.onclick = null;
+            resolve(value);
+        };
+        
+        okBtn.onclick = () => cleanup(true);
+        cancelBtn.onclick = () => cleanup(false);
+        closeBtn.onclick = () => cleanup(false);
+    });
+}
 
 // ==========================================================================
 // DOM Load Hook & Routing Setup
@@ -64,8 +145,12 @@ function setupTabNavigation() {
 function setupHistoryActions() {
     const clearBtn = document.getElementById("clear-history-btn");
     if (clearBtn) {
-        clearBtn.addEventListener("click", () => {
-            if (!confirm("Are you sure you want to clear all execution history? This cannot be undone.")) {
+        clearBtn.addEventListener("click", async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const confirmed = await showConfirmDialog("Clear History", "Are you sure you want to clear all execution history? This cannot be undone.");
+            if (!confirmed) {
                 return;
             }
             
@@ -73,14 +158,14 @@ function setupHistoryActions() {
             fetch("/api/runs", {
                 method: "DELETE"
             })
-            .then(res => res.json())
+            .then(checkResponse)
             .then(data => {
-                alert("History cleared successfully!");
+                showToast("History cleared successfully!", "success");
                 loadHistoryData(); // Reload table
             })
             .catch(err => {
                 console.error("Error clearing history:", err);
-                alert("Failed to clear history.");
+                showToast("Failed to clear history: " + err.message, "error");
             })
             .finally(() => {
                 clearBtn.disabled = false;
@@ -128,6 +213,7 @@ function setupSettingsForm() {
     const form = document.getElementById("settings-form");
     form.addEventListener("submit", (e) => {
         e.preventDefault();
+        e.stopPropagation();
         
         const payload = {
             NEBIUS_API_KEY: document.getElementById("setting-nebius-key").value.trim ? document.getElementById("setting-nebius-key").value.trim() : document.getElementById("setting-nebius-key").value,
@@ -141,13 +227,13 @@ function setupSettingsForm() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
         })
-        .then(res => res.json())
+        .then(checkResponse)
         .then(data => {
-            alert("Settings saved successfully!");
+            showToast("Settings saved successfully!", "success");
         })
         .catch(err => {
             console.error("Error saving settings:", err);
-            alert("Failed to save settings.");
+            showToast("Failed to save settings: " + err.message, "error");
         });
     });
 }
@@ -159,10 +245,13 @@ function setupRunCreation() {
     const startBtn = document.getElementById("start-run-btn");
     const input = document.getElementById("company-input");
     
-    startBtn.addEventListener("click", () => {
+    startBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
         const company = input.value.trim();
         if (!company) {
-            alert("Please enter a company name.");
+            showToast("Please enter a company name.", "warning");
             return;
         }
         
@@ -174,7 +263,7 @@ function setupRunCreation() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ company_name: company })
         })
-        .then(res => res.json())
+        .then(checkResponse)
         .then(run => {
             activeRunId = run.id;
             
@@ -194,7 +283,7 @@ function setupRunCreation() {
         })
         .catch(err => {
             console.error("Error starting run:", err);
-            alert("Failed to initiate run.");
+            showToast("Failed to initiate run: " + err.message, "error");
             startBtn.disabled = false;
             input.disabled = false;
         });
@@ -217,27 +306,61 @@ function pollActiveRun() {
             statusBadge.textContent = run.status;
             
             if (run.status === "paused") {
-                clearInterval(pollInterval);
-                pollInterval = null;
+                if (!pausedStartTime) {
+                    pausedStartTime = Date.now();
+                    
+                    // Open human-in-the-loop review panel
+                    document.getElementById("draft-markdown-preview").innerHTML = renderMarkdown(run.report);
+                    
+                    document.getElementById("hitl-panel").style.display = "flex";
+                    document.querySelector(".console-grid").classList.add("dual-pane");
+                    
+                    document.getElementById("hitl-timeout-notice").style.display = "flex";
+                    document.getElementById("hitl-timeout-notice").classList.remove("expired");
+                    
+                    updateSystemIndicator("Review Needed", "paused");
+                }
                 
-                // Open human-in-the-loop review panel
-                document.getElementById("draft-markdown-preview").innerHTML = renderMarkdown(run.report);
-                document.getElementById("draft-competitor-cards").innerHTML = renderResultCards(run.final_reports);
+                // Update countdown
+                let remaining = 30;
+                if (run.paused_at) {
+                    try {
+                        const pausedTime = new Date(run.paused_at).getTime();
+                        const serverElapsed = Math.floor((new Date().getTime() - pausedTime) / 1000);
+                        remaining = Math.max(0, 30 - serverElapsed);
+                    } catch (e) {
+                        const localElapsed = Math.floor((Date.now() - pausedStartTime) / 1000);
+                        remaining = Math.max(0, 30 - localElapsed);
+                    }
+                } else {
+                    const localElapsed = Math.floor((Date.now() - pausedStartTime) / 1000);
+                    remaining = Math.max(0, 30 - localElapsed);
+                }
                 
-                // Reset views to structured cards tab on display
-                document.querySelectorAll(".draft-tab-btn").forEach(b => b.classList.remove("active"));
-                document.querySelector('[data-draft-view="cards"]').classList.add("active");
-                document.getElementById("draft-cards-view").classList.add("active");
-                document.getElementById("draft-markdown-view").classList.remove("active");
-                
-                document.getElementById("hitl-panel").style.display = "flex";
-                document.querySelector(".console-grid").classList.add("dual-pane");
-                
-                updateSystemIndicator("Review Needed", "paused");
+                const timeoutText = document.getElementById("hitl-timeout-text");
+                const timeoutNotice = document.getElementById("hitl-timeout-notice");
+                if (remaining > 0) {
+                    timeoutText.textContent = `Remaining review time: ${remaining}s`;
+                } else {
+                    timeoutText.textContent = `Approval window exceeded! Saved as unverified draft.`;
+                    timeoutNotice.classList.add("expired");
+                }
+            } else if (run.status === "running") {
+                if (pausedStartTime) {
+                    pausedStartTime = null;
+                    document.getElementById("hitl-panel").style.display = "none";
+                    document.querySelector(".console-grid").classList.remove("dual-pane");
+                    document.getElementById("hitl-timeout-notice").style.display = "none";
+                }
+                updateSystemIndicator("Running Research", "running");
             } else if (run.status === "completed" || run.status === "failed") {
                 clearInterval(pollInterval);
                 pollInterval = null;
                 activeRunId = null;
+                pausedStartTime = null;
+                document.getElementById("hitl-timeout-notice").style.display = "none";
+                document.getElementById("hitl-panel").style.display = "none";
+                document.querySelector(".console-grid").classList.remove("dual-pane");
                 
                 // Reset start button
                 document.getElementById("start-run-btn").disabled = false;
@@ -247,9 +370,9 @@ function pollActiveRun() {
                 updateSystemIndicator("System Ready", "completed");
                 
                 if (run.status === "completed") {
-                    alert(`Research for ${run.company_name} completed successfully!`);
+                    showToast(`Research for ${run.company_name} completed successfully!`, "success");
                 } else {
-                    alert(`Research for ${run.company_name} failed. Check console logs.`);
+                    showToast(`Research for ${run.company_name} failed. Check console logs.`, "error");
                 }
             }
         })
@@ -265,7 +388,9 @@ function setupHITLActions() {
     const reviseBtn = document.getElementById("hitl-revise-btn");
     const feedbackInput = document.getElementById("hitl-feedback-input");
     
-    approveBtn.addEventListener("click", () => {
+    approveBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
         if (!activeRunId) return;
         
         approveBtn.disabled = true;
@@ -276,8 +401,10 @@ function setupHITLActions() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ approved: true, feedback: "" })
         })
-        .then(res => res.json())
+        .then(checkResponse)
         .then(run => {
+            pausedStartTime = null;
+            document.getElementById("hitl-timeout-notice").style.display = "none";
             document.getElementById("hitl-panel").style.display = "none";
             document.querySelector(".console-grid").classList.remove("dual-pane");
             document.getElementById("current-run-status").textContent = "running";
@@ -293,17 +420,20 @@ function setupHITLActions() {
         })
         .catch(err => {
             console.error("Error approving:", err);
+            showToast("Failed to approve: " + err.message, "error");
             approveBtn.disabled = false;
             reviseBtn.disabled = false;
         });
     });
     
-    reviseBtn.addEventListener("click", () => {
+    reviseBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
         if (!activeRunId) return;
         
         const feedback = feedbackInput.value.trim();
         if (!feedback) {
-            alert("Please enter feedback notes before requesting edits.");
+            showToast("Please enter feedback notes before requesting edits.", "warning");
             return;
         }
         
@@ -315,8 +445,10 @@ function setupHITLActions() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ approved: false, feedback: feedback })
         })
-        .then(res => res.json())
+        .then(checkResponse)
         .then(run => {
+            pausedStartTime = null;
+            document.getElementById("hitl-timeout-notice").style.display = "none";
             document.getElementById("hitl-panel").style.display = "none";
             document.querySelector(".console-grid").classList.remove("dual-pane");
             document.getElementById("current-run-status").textContent = "running";
@@ -333,6 +465,7 @@ function setupHITLActions() {
         })
         .catch(err => {
             console.error("Error revising:", err);
+            showToast("Failed to submit feedback: " + err.message, "error");
             approveBtn.disabled = false;
             reviseBtn.disabled = false;
         });
@@ -380,7 +513,7 @@ function loadHistoryData() {
             tbody.innerHTML = "";
             
             if (runs.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6" class="text-center">No runs logged yet.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center">No runs logged yet.</td></tr>`;
                 return;
             }
             
@@ -398,11 +531,47 @@ function loadHistoryData() {
                 // Render action buttons depending on run status
                 let actionBtn = "";
                 if (run.status === "completed") {
-                    actionBtn = `<button class="btn btn-primary action-btn-view" data-run-id="${run.id}" style="padding: 6px 12px; font-size: 13px;">View Report</button>`;
+                    if (run.approval_status === "Timed-Out (Draft Only)") {
+                        actionBtn = `
+                            <div class="action-group">
+                                <button type="button" class="btn btn-primary action-btn-view" data-run-id="${run.id}" style="padding: 6px 12px; font-size: 13px;">View Draft</button>
+                                <button type="button" class="btn btn-danger-outline action-btn-delete" data-run-id="${run.id}" style="padding: 6px 12px; font-size: 13px;">Delete</button>
+                            </div>
+                        `;
+                    } else {
+                        actionBtn = `
+                            <div class="action-group">
+                                <button type="button" class="btn btn-primary action-btn-view" data-run-id="${run.id}" style="padding: 6px 12px; font-size: 13px;">View Report</button>
+                                <button type="button" class="btn btn-danger-outline action-btn-delete" data-run-id="${run.id}" style="padding: 6px 12px; font-size: 13px;">Delete</button>
+                            </div>
+                        `;
+                    }
                 } else if (run.status === "paused") {
-                    actionBtn = `<button class="btn btn-warning action-btn-resume" data-run-id="${run.id}" style="padding: 6px 12px; font-size: 13px;">Review Draft</button>`;
+                    actionBtn = `
+                        <div class="action-group">
+                            <button type="button" class="btn btn-warning action-btn-resume" data-run-id="${run.id}" style="padding: 6px 12px; font-size: 13px;">Review Draft</button>
+                            <button type="button" class="btn btn-danger-outline action-btn-delete" data-run-id="${run.id}" style="padding: 6px 12px; font-size: 13px;">Delete</button>
+                        </div>
+                    `;
                 } else {
-                    actionBtn = `<button class="btn btn-primary" disabled style="padding: 6px 12px; font-size: 13px; opacity: 0.5;">In Progress</button>`;
+                    actionBtn = `<button type="button" class="btn btn-primary" disabled style="padding: 6px 12px; font-size: 13px; opacity: 0.5;">In Progress</button>`;
+                }
+                
+                // Render approval badge
+                let approvalBadge = "";
+                const approvalStatus = run.approval_status || "N/A";
+                if (approvalStatus === "Approved") {
+                    approvalBadge = `<span class="status-badge completed">Approved</span>`;
+                } else if (approvalStatus === "Approved (Late)") {
+                    approvalBadge = `<span class="status-badge completed">Approved (Late)</span>`;
+                } else if (approvalStatus === "Timed-Out (Draft Only)") {
+                    approvalBadge = `<span class="status-badge paused">Timed-Out (Draft)</span>`;
+                } else if (approvalStatus === "Pending Review") {
+                    approvalBadge = `<span class="status-badge paused">Pending Review</span>`;
+                } else if (approvalStatus === "Edits Requested") {
+                    approvalBadge = `<span class="status-badge failed">Edits Requested</span>`;
+                } else {
+                    approvalBadge = `<span style="color: var(--text-muted); font-size: 13px;">N/A</span>`;
                 }
                 
                 tr.innerHTML = `
@@ -410,6 +579,7 @@ function loadHistoryData() {
                     <td><strong>${run.company_name}</strong></td>
                     <td>${compStr}</td>
                     <td><span class="status-badge ${run.status}">${run.status}</span></td>
+                    <td>${approvalBadge}</td>
                     <td>${dateStr}</td>
                     <td>${actionBtn}</td>
                 `;
@@ -418,15 +588,27 @@ function loadHistoryData() {
             
             // Add click listeners to avoid inline event handlers (blocked by CSP)
             tbody.querySelectorAll(".action-btn-view").forEach(btn => {
-                btn.addEventListener("click", () => {
+                btn.addEventListener("click", (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
                     const runId = btn.getAttribute("data-run-id");
                     viewReportDetails(runId);
                 });
             });
             tbody.querySelectorAll(".action-btn-resume").forEach(btn => {
-                btn.addEventListener("click", () => {
+                btn.addEventListener("click", (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
                     const runId = btn.getAttribute("data-run-id");
                     resumeActiveReview(runId);
+                });
+            });
+            tbody.querySelectorAll(".action-btn-delete").forEach(btn => {
+                btn.addEventListener("click", (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const runId = btn.getAttribute("data-run-id");
+                    deleteRun(runId);
                 });
             });
         })
@@ -454,18 +636,16 @@ window.resumeActiveReview = function(runId) {
             document.getElementById("active-run-details").style.display = "flex";
             
             document.getElementById("draft-markdown-preview").innerHTML = renderMarkdown(run.report);
-            document.getElementById("draft-competitor-cards").innerHTML = renderResultCards(run.final_reports);
-            
-            // Default tabs views
-            document.querySelectorAll(".draft-tab-btn").forEach(b => b.classList.remove("active"));
-            document.querySelector('[data-draft-view="cards"]').classList.add("active");
-            document.getElementById("draft-cards-view").classList.add("active");
-            document.getElementById("draft-markdown-view").classList.remove("active");
             
             document.getElementById("hitl-panel").style.display = "flex";
             document.querySelector(".console-grid").classList.add("dual-pane");
             
             updateSystemIndicator("Review Needed", "paused");
+            
+            // Reset pausedStartTime and start polling to track timeout
+            pausedStartTime = null;
+            if (pollInterval) clearInterval(pollInterval);
+            pollInterval = setInterval(pollActiveRun, 1000);
         });
 };
 
@@ -491,8 +671,34 @@ window.viewReportDetails = function(runId) {
     fetch(`/api/runs/${runId}`)
         .then(res => res.json())
         .then(run => {
-            document.getElementById("modal-report-title").textContent = `Competitor Analysis: ${run.company_name}`;
+            document.getElementById("modal-report-title").textContent = run.approval_status === "Timed-Out (Draft Only)" ? `Draft Report: ${run.company_name}` : `Competitor Analysis: ${run.company_name}`;
             document.getElementById("modal-report-body").innerHTML = renderMarkdown(run.report);
+            
+            const footer = document.getElementById("modal-report-footer");
+            const approveBtn = document.getElementById("modal-approve-btn");
+            
+            if (run.approval_status === "Timed-Out (Draft Only)") {
+                footer.style.display = "flex";
+                approveBtn.onclick = async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    const confirmed = await showConfirmDialog("Approve Draft", "Are you sure you want to approve this draft and publish it?");
+                    if (!confirmed) {
+                        return;
+                    }
+                    
+                    // Close the view report modal
+                    document.getElementById("report-modal").style.display = "none";
+                    
+                    // Execute approval
+                    lateApproveRun(runId);
+                };
+            } else {
+                footer.style.display = "none";
+                approveBtn.onclick = null;
+            }
+            
             document.getElementById("report-modal").style.display = "flex";
         })
         .catch(err => console.error("Error loading report:", err));
@@ -649,11 +855,40 @@ function renderMarkdown(md) {
     html = html.replace(/^\* (.*$)/gim, '<li>$1</li>');
     html = html.replace(/^- (.*$)/gim, '<li>$1</li>');
     
+    // Parse Markdown tables
+    const lines = html.split('\n');
+    let output = [];
+    let inTable = false;
+    let tableRows = [];
+    
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        
+        if (line.startsWith('|') && line.endsWith('|')) {
+            if (!inTable) {
+                inTable = true;
+                tableRows = [];
+            }
+            // Parse cell items
+            const cells = line.split('|').map(c => c.trim()).slice(1, -1);
+            tableRows.push(cells);
+        } else {
+            if (inTable) {
+                output.push(generateHTMLTable(tableRows));
+                inTable = false;
+            }
+            output.push(line);
+        }
+    }
+    if (inTable) {
+        output.push(generateHTMLTable(tableRows));
+    }
+    
     // Paragraph compilation
-    html = html.split('\n').map(line => {
+    html = output.map(line => {
         const trimmed = line.trim();
         if (!trimmed) return "";
-        if (trimmed.startsWith("<h") || trimmed.startsWith("<li")) {
+        if (trimmed.startsWith("<h") || trimmed.startsWith("<li") || trimmed.startsWith("<div") || trimmed.startsWith("</div") || trimmed.startsWith("<table") || trimmed.startsWith("</table") || trimmed.startsWith("<thead") || trimmed.startsWith("</thead") || trimmed.startsWith("<tbody") || trimmed.startsWith("</tbody") || trimmed.startsWith("<tr") || trimmed.startsWith("</tr") || trimmed.startsWith("<th") || trimmed.startsWith("</th") || trimmed.startsWith("<td") || trimmed.startsWith("</td")) {
             return line;
         }
         return `<p>${line}</p>`;
@@ -661,3 +896,73 @@ function renderMarkdown(md) {
     
     return html;
 }
+
+function generateHTMLTable(rows) {
+    if (rows.length === 0) return "";
+    
+    let html = '<div class="table-container" style="overflow-x: auto; margin-bottom: 20px;"><table style="width:100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 10px; font-size: 14px;">';
+    
+    // Row 0 is header
+    const headers = rows[0];
+    html += '<thead><tr style="background-color: rgba(255,255,255,0.03);">';
+    headers.forEach(h => {
+        html += `<th style="padding: 10px 12px; border: 1px solid var(--border-color); text-align: left; font-weight: 600;">${h}</th>`;
+    });
+    html += '</tr></thead><tbody>';
+    
+    // Remaining rows (skipping delimiter line if it contains dashes)
+    for (let r = 1; r < rows.length; r++) {
+        const row = rows[r];
+        const isDelimiter = row.every(cell => /^[\-\s:]+$/.test(cell));
+        if (isDelimiter) continue;
+        
+        html += '<tr style="border-bottom: 1px solid var(--border-color);">';
+        row.forEach(cell => {
+            html += `<td style="padding: 10px 12px; border: 1px solid var(--border-color);">${cell}</td>`;
+        });
+        html += '</tr>';
+    }
+    
+    html += '</tbody></table></div>';
+    return html;
+}
+
+window.lateApproveRun = async function(runId) {
+    const confirmed = await showConfirmDialog("Approve Draft", "Are you sure you want to approve this draft and publish it?");
+    if (!confirmed) {
+        return;
+    }
+    
+    fetch(`/api/runs/${runId}/late-approve`, {
+        method: "POST"
+    })
+    .then(checkResponse)
+    .then(data => {
+        showToast("Draft approved and published successfully!", "success");
+        loadHistoryData(); // Reload table
+    })
+    .catch(err => {
+        console.error("Error approving draft:", err);
+        showToast("Failed to approve draft: " + err.message, "error");
+    });
+};
+
+window.deleteRun = async function(runId) {
+    const confirmed = await showConfirmDialog("Delete Run", "Are you sure you want to delete this run and its reports?");
+    if (!confirmed) {
+        return;
+    }
+    
+    fetch(`/api/runs/${runId}`, {
+        method: "DELETE"
+    })
+    .then(checkResponse)
+    .then(data => {
+        showToast("Run deleted successfully!", "success");
+        loadHistoryData(); // Reload table
+    })
+    .catch(err => {
+        console.error("Error deleting run:", err);
+        showToast("Failed to delete run: " + err.message, "error");
+    });
+};

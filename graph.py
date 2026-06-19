@@ -148,6 +148,14 @@ def compile_draft_report_node(state: AgentState) -> Dict[str, Any]:
                 "market_positioning": f"Positions itself as the simple alternative to {company}.",
                 "recent_news": "Recently launched their new desktop client version."
             })
+        
+        # Add mock comparative matrix
+        mock_report += "\n## Competitor Comparison Matrix\n"
+        mock_report += "| Competitor Name | Pricing Model | Key Advantage | Market Focus |\n"
+        mock_report += "| --- | --- | --- | --- |\n"
+        for comp in competitors:
+            mock_report += f"| {comp} | Mock pricing tier | Simple alternative | Small teams |\n"
+            
         return {"report": mock_report, "final_reports": final_reports}
         
     llm = get_nebius_llm()
@@ -164,7 +172,8 @@ def compile_draft_report_node(state: AgentState) -> Dict[str, Any]:
         "based on the provided research data. "
         "You must respond ONLY with a valid JSON object containing exactly two keys:\n"
         "1. 'report': A string containing the complete, detailed competitor analysis report in Markdown format. "
-        "Include sections for Executive Summary, Competitor Deep Dives (covering Features, Pricing, and Market Positioning), and Strategic Recommendations.\n"
+        "Include sections for: Executive Summary, Competitor Deep Dives (covering Features, Pricing, and Market Positioning), "
+        "a side-by-side Competitor Comparison Table (matrix comparing features, pricing models, and positioning), and Strategic Recommendations.\n"
         "2. 'final_reports': A JSON list of objects, one for each competitor. Each competitor object must contain exactly these five keys:\n"
         "   - 'competitor_name': The name of the competitor.\n"
         "   - 'pricing_model': A short summary of their pricing model and tiers (e.g., Free tier, Pro $20/mo).\n"

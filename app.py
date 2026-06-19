@@ -3,11 +3,13 @@ import sys
 import json
 import uuid
 import re
+import time
 import threading
 import warnings
 warnings.filterwarnings("ignore")
 from datetime import datetime
 from flask import Flask, request, jsonify, render_template
+import shutil
 
 # Redirect path to import workspace files
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -162,6 +164,8 @@ def run_agent_workflow(run_id, company_name, settings):
             
             if state_info.next and "human_review" in state_info.next:
                 active_runs[run_id]["status"] = "paused"
+                active_runs[run_id]["paused_at"] = datetime.now().isoformat()
+                active_runs[run_id]["approval_status"] = "Pending Review"
             else:
                 active_runs[run_id]["status"] = "completed"
                 active_runs[run_id]["completed_at"] = datetime.now().isoformat()
@@ -216,6 +220,8 @@ def resume_agent_workflow(run_id, approved, feedback, settings):
             
             if state_info.next and "human_review" in state_info.next:
                 active_runs[run_id]["status"] = "paused"
+                active_runs[run_id]["paused_at"] = datetime.now().isoformat()
+                active_runs[run_id]["approval_status"] = "Pending Review"
             else:
                 active_runs[run_id]["status"] = "completed"
                 active_runs[run_id]["completed_at"] = datetime.now().isoformat()
@@ -227,6 +233,60 @@ def resume_agent_workflow(run_id, approved, feedback, settings):
             active_runs[run_id]["status"] = "failed"
             active_runs[run_id]["logs"] += f"\n[System Error] Resumption failed: {str(e)}\n"
         save_run_to_db(active_runs[run_id])
+
+# --- Human-in-the-Loop (HITL) Timeout Monitoring ---
+APPROVAL_TIMEOUT_SECONDS = 30  # Timeout window in seconds
+
+def monitor_approval_timeouts():
+    while True:
+        time.sleep(2)
+        db = load_db()
+        now = datetime.now()
+        runs_to_resume = []
+        
+        with db_lock:
+            for run_id, run in list(active_runs.items()):
+                if run["status"] == "paused" and "paused_at" in run:
+                    try:
+                        paused_time = datetime.fromisoformat(run["paused_at"])
+                        elapsed = (now - paused_time).total_seconds()
+                        if elapsed >= APPROVAL_TIMEOUT_SECONDS:
+                            runs_to_resume.append((run_id, db["settings"]))
+                    except Exception:
+                        pass
+        
+        for run_id, settings in runs_to_resume:
+            sys.__stdout__.write(f"[Timeout Guard] Run {run_id} exceeded HITL approval window. Saving as Draft Only...\n")
+            
+            # Ensure drafts folder exists
+            os.makedirs("reports/drafts", exist_ok=True)
+            
+            with db_lock:
+                run = active_runs[run_id]
+                company = run["company_name"]
+                report_content = run["report"]
+                
+                # Write draft file
+                filename = f"reports/drafts/competitor_analysis_{company.lower().replace(' ', '_')}.md"
+                try:
+                    with open(filename, "w", encoding="utf-8") as f:
+                        f.write(report_content)
+                except Exception as e:
+                    sys.__stdout__.write(f"[System Error] Failed to write draft file: {str(e)}\n")
+                
+                run["status"] = "completed"
+                run["approval_status"] = "Timed-Out (Draft Only)"
+                run["completed_at"] = datetime.now().isoformat()
+                run["logs"] += "\n[System] HITL Approval timeout exceeded. Saved report to reports/drafts/ as an unverified draft.\n"
+                
+                # Remove from active runs since it's completed
+                active_runs.pop(run_id, None)
+                
+            save_run_to_db(run)
+
+# Start background monitoring thread
+timeout_monitor_thread = threading.Thread(target=monitor_approval_timeouts, daemon=True)
+timeout_monitor_thread.start()
 
 # --- Routes ---
 @app.route("/")
@@ -299,6 +359,7 @@ def start_run():
             "id": run_id,
             "company_name": company_name,
             "status": "running",
+            "approval_status": "N/A",
             "logs": "",
             "report": "",
             "competitors": [],
@@ -335,6 +396,7 @@ def approve_run(run_id):
     with db_lock:
         active_runs[run_id] = match
         active_runs[run_id]["status"] = "running"
+        active_runs[run_id]["approval_status"] = "Approved" if approved else "Edits Requested"
     
     # Save the updated run status
     save_run_to_db(active_runs[run_id])
@@ -392,6 +454,68 @@ def get_analytics():
         "avg_duration_seconds": avg_duration,
         "competitor_frequencies": competitor_counts
     })
+
+@app.route("/api/runs/<run_id>/late-approve", methods=["POST"])
+def late_approve_run(run_id):
+    db = load_db()
+    with db_lock:
+        # Find run in db["runs"]
+        match = next((r for r in db["runs"] if r["id"] == run_id), None)
+        if not match:
+            return jsonify({"error": "Run not found"}), 404
+            
+        company = match["company_name"]
+        comp_lower = company.lower().replace(' ', '_')
+        draft_file = f"reports/drafts/competitor_analysis_{comp_lower}.md"
+        prod_file = f"reports/competitor_analysis_{comp_lower}.md"
+        
+        # Move file from drafts to main reports directory
+        try:
+            os.makedirs("reports", exist_ok=True)
+            if os.path.exists(draft_file):
+                shutil.move(draft_file, prod_file)
+            else:
+                # Fallback: if draft file doesn't exist, write content directly
+                with open(prod_file, "w", encoding="utf-8") as f:
+                    f.write(match.get("report", ""))
+        except Exception as e:
+            return jsonify({"error": f"Failed to publish draft: {str(e)}"}), 500
+            
+        match["approval_status"] = "Approved (Late)"
+        match["logs"] += "\n[System] Late approval received. Published report to reports/.\n"
+        
+    save_db(db)
+    return jsonify(match)
+
+@app.route("/api/runs/<run_id>", methods=["DELETE"])
+def delete_run(run_id):
+    db = load_db()
+    with db_lock:
+        # Find the run
+        match = next((r for r in db["runs"] if r["id"] == run_id), None)
+        if not match:
+            return jsonify({"error": "Run not found"}), 404
+            
+        company = match["company_name"]
+        comp_lower = company.lower().replace(' ', '_')
+        draft_file = f"reports/drafts/competitor_analysis_{comp_lower}.md"
+        prod_file = f"reports/competitor_analysis_{comp_lower}.md"
+        
+        # Remove files if they exist
+        for fpath in [draft_file, prod_file]:
+            try:
+                if os.path.exists(fpath):
+                    os.remove(fpath)
+            except Exception:
+                pass
+                
+        # Remove from DB
+        db["runs"] = [r for r in db["runs"] if r["id"] != run_id]
+        # Remove from active runs if present
+        active_runs.pop(run_id, None)
+        
+    save_db(db)
+    return jsonify({"status": "success", "message": f"Run {run_id} deleted successfully."})
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000)

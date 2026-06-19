@@ -108,7 +108,7 @@
                             <label for="company-input">Target Company or Product Name</label>
                             <div class="input-wrapper">
                                 <input type="text" id="company-input" placeholder="e.g. Vercel, Linear, Stripe">
-                                <button id="start-run-btn" class="btn btn-primary">Start Research</button>
+                                <button type="button" id="start-run-btn" class="btn btn-primary">Start Research</button>
                             </div>
                         </div>
                     </div>
@@ -133,27 +133,15 @@
                                     <p>The agent compiled the competitor analysis draft. Please approve it or submit revision feedback.</p>
                                 </div>
                                 
+                                <!-- Visual Timeout Notice -->
+                                <div id="hitl-timeout-notice" class="hitl-timeout-notice" style="display: none;">
+                                    <span class="timeout-timer-icon">⏳</span>
+                                    <span id="hitl-timeout-text">Remaining review time: 30s</span>
+                                </div>
+                                
                                 <div class="draft-preview">
-                                    <!-- View Tabs for Cards vs Markdown -->
-                                    <div class="draft-tabs-header">
-                                        <button class="draft-tab-btn active" data-draft-view="cards">Structured Cards</button>
-                                        <button class="draft-tab-btn" data-draft-view="markdown">Full Markdown Draft</button>
-                                    </div>
-                                    
-                                    <!-- Structured Cards View -->
-                                    <div id="draft-cards-view" class="draft-view-pane active">
-                                        <div class="pipeline-title">PIPELINE OUTPUT</div>
-                                        <div class="pipeline-output">
-                                            <h3>Streamlit Result Cards — one expander per competitor</h3>
-                                            <p class="pipeline-subtitle">For each report in state["final_reports"], the UI renders a card with the four extracted fields.</p>
-                                            <div id="draft-competitor-cards" class="competitor-card-grid"></div>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Markdown Plain Text View -->
-                                    <div id="draft-markdown-view" class="draft-view-pane">
-                                        <div id="draft-markdown-preview" class="markdown-preview-box"></div>
-                                    </div>
+                                    <div class="pipeline-title">DRAFT REPORT PREVIEW</div>
+                                    <div id="draft-markdown-preview" class="markdown-preview-box"></div>
                                 </div>
                                 
                                 <div class="hitl-actions">
@@ -161,8 +149,8 @@
                                         <textarea id="hitl-feedback-input" placeholder="Provide revision notes here if requesting edits (e.g. 'Add more pricing info for Netlify')"></textarea>
                                     </div>
                                     <div class="btn-group">
-                                        <button id="hitl-revise-btn" class="btn btn-warning">Request Edits</button>
-                                        <button id="hitl-approve-btn" class="btn btn-success">Approve & Publish</button>
+                                        <button type="button" id="hitl-revise-btn" class="btn btn-warning">Request Edits</button>
+                                        <button type="button" id="hitl-approve-btn" class="btn btn-success">Approve & Publish</button>
                                     </div>
                                 </div>
                             </div>
@@ -173,7 +161,7 @@
                 <!-- 3. History Tab -->
                 <section id="history-tab" class="tab-pane">
                     <div class="history-actions-bar" style="display: flex; justify-content: flex-end; margin-bottom: 15px;">
-                        <button id="clear-history-btn" class="btn btn-danger">Clear History</button>
+                        <button type="button" id="clear-history-btn" class="btn btn-danger">Clear History</button>
                     </div>
                     <div class="table-card">
                         <table class="history-table">
@@ -183,13 +171,14 @@
                                     <th>Target Company</th>
                                     <th>Discovered Competitors</th>
                                     <th>Status</th>
+                                    <th>HITL Approval</th>
                                     <th>Date Created</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="history-table-body">
                                 <tr>
-                                    <td colspan="6" class="text-center">No runs logged yet.</td>
+                                    <td colspan="7" class="text-center">No runs logged yet.</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -204,6 +193,26 @@
                             </div>
                             <div class="modal-body">
                                 <div id="modal-report-body" class="report-markdown-body"></div>
+                            </div>
+                            <div class="modal-footer" id="modal-report-footer" style="padding: 16px 24px; border-top: 1px solid var(--border-color); display: none; justify-content: flex-end; gap: 12px;">
+                                <button type="button" id="modal-approve-btn" class="btn btn-success" style="padding: 8px 16px;">Approve & Publish</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Custom Confirmation Modal -->
+                    <div id="confirm-modal" class="modal" style="display: none; z-index: 1100;">
+                        <div class="modal-content" style="max-width: 450px;">
+                            <div class="modal-header">
+                                <h2 id="confirm-modal-title">Confirm Action</h2>
+                                <span class="close-btn" id="close-confirm-btn">&times;</span>
+                            </div>
+                            <div class="modal-body" style="padding: 20px 24px;">
+                                <p id="confirm-modal-message" style="font-size: 15px; line-height: 1.5; color: var(--text-muted);"></p>
+                            </div>
+                            <div class="modal-footer" style="padding: 16px 24px; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end; gap: 12px;">
+                                <button type="button" id="confirm-cancel-btn" class="btn btn-secondary" style="padding: 8px 16px;">Cancel</button>
+                                <button type="button" id="confirm-ok-btn" class="btn btn-primary" style="padding: 8px 16px;">Confirm</button>
                             </div>
                         </div>
                     </div>

@@ -1,9 +1,17 @@
 import os
 import sys
+import select
 import warnings
 warnings.filterwarnings("ignore")
 from dotenv import load_dotenv
 from graph import app
+
+def input_with_timeout(prompt: str, timeout: int) -> str:
+    print(prompt, end="", flush=True)
+    rlist, _, _ = select.select([sys.stdin], [], [], timeout)
+    if rlist:
+        return sys.stdin.readline().strip()
+    return None
 
 def run_agent():
     load_dotenv()
@@ -58,13 +66,23 @@ def run_agent():
             print(draft_report)
             print("-------------------")
             
-            choice = input("\nDo you approve this draft? (yes / no / edit): ").strip().lower()
+            choice = input_with_timeout("\nDo you approve this draft? (yes / no / edit) [Timeout 30s]: ", 30)
             
-            if choice in ["yes", "y"]:
-                # User approves: update state to approved=True and resume
-                app.update_state(config, {"approved": True, "feedback": ""})
-                print("\n[System] Draft approved. Resuming execution to publish...")
-            elif choice in ["edit", "e", "no", "n"]:
+            if choice is None:
+                os.makedirs("reports/drafts", exist_ok=True)
+                filename = f"reports/drafts/competitor_analysis_{company_name.lower().replace(' ', '_')}.md"
+                with open(filename, "w", encoding="utf-8") as f:
+                    f.write(draft_report)
+                print(f"\n[System] HITL Approval timeout exceeded. Saved draft report to: {os.path.abspath(filename)}")
+                break
+            else:
+                choice_str = choice.strip().lower()
+            
+            if choice_str in ["yes", "y"]:
+                if choice is not None:
+                    app.update_state(config, {"approved": True, "feedback": ""})
+                print("\n[System] Resuming execution to publish...")
+            elif choice_str in ["edit", "e", "no", "n"]:
                 # User rejects or requests modifications: get feedback
                 feedback = input("\nEnter your feedback / revision requests for the agent:\n").strip()
                 if not feedback:
