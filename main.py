@@ -49,7 +49,7 @@ def run_agent():
     for event in events:
         pass # The nodes themselves print logs to console
         
-    # Get current state to verify if we hit the interrupt
+    # Get current state to verify if I hit the interrupt
     state_info = app.get_state(config)
     
     while state_info.next:
