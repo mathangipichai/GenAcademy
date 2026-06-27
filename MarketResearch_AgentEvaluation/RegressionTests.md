@@ -1,6 +1,6 @@
 # Regression Testing Results - Market Research Agent
 
-I performed regression testing by comparing baseline vs. post-improvement runs for both previously failing test cases (adversarial and generic disambiguations) and previously passing/functional test cases.
+We performed regression testing by comparing baseline vs. post-improvement runs for both previously failing test cases (adversarial and generic disambiguations) and previously passing/functional test cases.
 
 ---
 
@@ -30,7 +30,7 @@ Queries with generic nouns previously failed to identify corporate technology co
 
 ## 3. Happy Path Functional Verification (Previously Passing)
 
-I verified that the changes did not regress previously passing cases. Grounding quality (Faithfulness) saw significant improvements due to our scraper search fallback:
+We verified that the changes did not regress previously passing cases. Grounding quality (Faithfulness) saw significant improvements due to our scraper search fallback:
 
 | Query Input | Baseline Recall | Improved Recall | Baseline Faithfulness | Improved Faithfulness | Recall Regression? | Grounding Quality Delta |
 | --- | --- | --- | --- | --- | --- | --- |

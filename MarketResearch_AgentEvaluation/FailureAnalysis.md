@@ -1,6 +1,6 @@
 # Failure Analysis - Market Research Agent Evaluation
 
-I clustered the failures encountered during the baseline run of the Market Research Agent into four primary failure modes.
+We clustered the failures encountered during the baseline run of the Market Research Agent into four primary failure modes.
 
 ---
 

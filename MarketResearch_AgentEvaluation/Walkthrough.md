@@ -6,7 +6,7 @@ This walkthrough documents the technical modifications, observed improvements, r
 
 ## 1. What Changed?
 
-To address critical baseline vulnerabilities, I modified both the evaluation framework and the agent's core architecture:
+To address critical baseline vulnerabilities, we modified both the evaluation framework and the agent's core architecture:
 
 ### Evaluation Framework Updates
 * **LangSmith Observability**: Configured and tested credentials using the provided Langsmith API Key. Tracing is now enabled for all runs via the `.env` file environment configuration.
@@ -38,7 +38,7 @@ To address critical baseline vulnerabilities, I modified both the evaluation fra
 
 ---
 
-## 4. What I Would Try Next?
+## 4. What We Would Try Next?
 
 1. **Modify Extraction Quantity Prompt**: Update the prompt in `find_competitors_node` from *"identify 2-3 of its closest key competitors"* to *"identify up to 5 of its closest key competitors"*. This will instantly close the prompt-ref-mismatch gap and raise competitor recall above 85%.
 2. **Proxy Rotation & Crawling Infrastructure**: Integrate a proxy rotation service or browser scraper (like Crawl4AI or Playwright) to prevent destination sites from blocking the BeautifulSoup scraper, allowing the agent to read full page articles consistently.
